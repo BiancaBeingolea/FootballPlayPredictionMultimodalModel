@@ -40,9 +40,7 @@ scaler = StandardScaler()
 df[tab_cols] = scaler.fit_transform(df[tab_cols])
 
 
-# ================================================
-#  🔁  LOOP THROUGH ALL TEST SAMPLES
-# ================================================
+#  Looping through test samples
 print("\nRunning predictions on all test samples...\n")
 
 results = []
@@ -60,17 +58,17 @@ for idx, row in df.iterrows():
     # Ground truth label
     true_label = row["label"].upper()  # assumes PASS or RUN
 
-    # ----- Image preprocessing -----
+    # Image preprocessing
     image = Image.open(image_path).convert("RGB")
     image = image.resize((224, 224))
     image = np.array(image).astype("float32")
     pixel_values = np.expand_dims(image, axis=0)
 
-    # ----- Tabular preprocessing -----
+    # Tabular preprocessing
     tab_vector = row[tab_cols].values.astype("float32")
     tab_vector = np.expand_dims(tab_vector, axis=0)
 
-    # ----- Run prediction -----
+    # Run prediction
     prediction = model.predict({"image": pixel_values, "tabular": tab_vector}, verbose=0)
     prob = float(prediction[0][0])
     pred_label = "PASS" if prob >= 0.65 else "RUN"
@@ -85,9 +83,7 @@ for idx, row in df.iterrows():
     print(f"Row {idx:02d} | {image_filename} | PASS prob: {prob:.4f} | Pred: {pred_label} | True: {true_label} | {'✓' if is_correct else '✗'}")
 
 
-# ================================================
 #  Summary printout
-# ================================================
 accuracy = correct / total if total > 0 else 0
 
 print("\n========================")
