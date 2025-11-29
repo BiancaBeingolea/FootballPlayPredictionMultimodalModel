@@ -8,9 +8,7 @@ from sklearn.preprocessing import StandardScaler
 from PIL import Image
 import os
 
-# ==========================================================
-# 1. Dataset Loader (returns raw 224×224 RGB pixels)
-# ==========================================================
+# 1. Loading the dataset (returns raw 224×224 RGB pixels)
 class PlayDataset(Sequence):
     def __init__(self, df, image_dir, scaler, batch_size=16):
         self.df = df
@@ -32,17 +30,17 @@ class PlayDataset(Sequence):
         labels = []
 
         for _, row in batch.iterrows():
-            # ---- Load raw image ----
+            # load raw image
             img_path = os.path.join(self.image_dir, row["filename"])
             img = Image.open(img_path).convert("RGB")
             img = img.resize((224, 224))
             img = np.array(img).astype("float32")  # raw 0–255
             images.append(img)
 
-            # ---- Tabular ----
+            #  handle tabular data
             tabular.append(row[self.tab_cols].values.astype("float32"))
 
-            # ---- Label ----
+            # add label
             labels.append(1 if row["label"] == "pass" else 0)
 
         return {
@@ -51,9 +49,7 @@ class PlayDataset(Sequence):
         }, tf.convert_to_tensor(labels, dtype=tf.float32)
 
 
-# ==========================================================
-# 2. CLIP Image Encoder (Graph-safe)
-# ==========================================================
+# 2. Incorporating CLIP Image Encoder for embeddings
 @register_keras_serializable(name="CLIPImageEncoder")
 class CLIPImageEncoder(tf.keras.layers.Layer):
     def __init__(self, clip_model_name="openai/clip-vit-base-patch32", **kwargs):
@@ -62,7 +58,7 @@ class CLIPImageEncoder(tf.keras.layers.Layer):
         # serializable settings
         self.clip_model_name = clip_model_name
 
-        # Load HF model + processor (not serializable, but OK here)
+        # Load HuggingFace model + processor
         self.processor = CLIPProcessor.from_pretrained(clip_model_name)
         self.model = TFCLIPModel.from_pretrained(clip_model_name)
 
@@ -72,11 +68,11 @@ class CLIPImageEncoder(tf.keras.layers.Layer):
         This is required because HuggingFace internals
         cannot be traced by TensorFlow graph.
         """
-        imgs = list(images_np)  # numpy → list of images
+        imgs = list(images_np)  # numpy to list of images
 
         processed = self.processor(images=imgs, return_tensors="tf")
         outputs = self.model.get_image_features(**processed)
-        return outputs.numpy()  # return numpy for tf.py_function
+        return outputs.numpy()  # returning numpy for tf.py_function
 
     def call(self, inputs):
         outputs = tf.py_function(
@@ -85,8 +81,7 @@ class CLIPImageEncoder(tf.keras.layers.Layer):
             Tout=tf.float32
         )
 
-        # CLIP ViT-B/32 = 512-dim embeddings
-        outputs.set_shape((None, 512))
+        outputs.set_shape((None, 512)) # 512-dim embeddings
         return outputs
 
     def get_config(self):
@@ -99,9 +94,7 @@ class CLIPImageEncoder(tf.keras.layers.Layer):
         return cls(**config)
 
 
-# ==========================================================
-# 3. Build Multimodal Model
-# ==========================================================
+# 3. Building Multimodal Model
 def build_multimodal_model(num_tab_features):
     image_input = tf.keras.Input(shape=(224, 224, 3), dtype=tf.float32, name="image")
     tabular_input = tf.keras.Input(shape=(num_tab_features,), dtype=tf.float32, name="tabular")
@@ -124,14 +117,13 @@ def build_multimodal_model(num_tab_features):
     return model
 
 
-# ==========================================================
-# 4. Load CSV & Preprocess Tabular
-# ==========================================================
+# 4. Loading CSV & Preprocessing Tabular Data
 df = pd.read_csv("data/metadata.csv")
 
 tabular_cols = ["yd_line", "down", "yds_to_go",
                 "score_diff", "quarter", "time_rem"]
 
+# Converting time from MM:SS to integer
 def time_to_seconds(t):
     try:
         m, s = t.split(":")
@@ -141,11 +133,11 @@ def time_to_seconds(t):
 
 df["time_rem"] = df["time_rem"].apply(time_to_seconds)
 
-# Scale tabular values
+# Scaling tabular values
 scaler = StandardScaler()
 df[tabular_cols] = scaler.fit_transform(df[tabular_cols])
 
-# Train/validation split
+# Creating train/validation split
 train_df = df.sample(frac=0.8, random_state=42)
 val_df = df.drop(train_df.index)
 
@@ -153,9 +145,7 @@ train_data = PlayDataset(train_df, "data/images", scaler)
 val_data = PlayDataset(val_df, "data/images", scaler)
 
 
-# ==========================================================
-# 5. Train & Save
-# ==========================================================
+# 5. Training & Saving Model
 if __name__ == "__main__":
     model = build_multimodal_model(num_tab_features=len(tabular_cols))
     model.summary()
